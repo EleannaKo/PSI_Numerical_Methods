@@ -1,0 +1,44 @@
+Question 2.a)
+A monoid is a set that is associative and its elements don't necessarily have an inverse.
+Question 2.b)
+The property of the monoid that allows us to reverse the order is assiciativity.
+Question 2.c)
+O(A*B*C)=O(A*B)+O(D*C), where D=A*B. So, O(A*B*C)=O(m*p*q + m*q*n) from left to right.
+O(A*B*C)= O(n*q*p + n*p*m) from right to left. 
+The cost depends on the dimensions of the 3 matrices, and more specifically the dimensions of A and C. If m >>, the costs become m*q*(p+m) for left to right and n*p(m+q) for right to left, so only if q >>, the left to right method is more costly. This means that the configuration that gives us a more costly first method is A, C being a vertically rectangular matrix (almost like a column) and B a horizontally rectangular matrix. The opposite configuration is true for the second method being more costly.
+Question 2.d)
+The matmul is a function that helps multiply matrices in the most optimal way, so that the cost of the operation remains the lowest possible.
+
+Question 3.a)
+We differentiate the energy and reach to: A*x+b=0, from which we find the extrema.
+
+Question 3.b)-c)
+
+using LinearAlgebra
+
+# Random inputs
+n = 4
+A = rand(n, n)
+A = A' * A  # Make A symmetric positive definite
+b = rand(n)
+c = 2
+
+# Function for calculating the minimum energy
+function min_energy(A, b, c)
+    # Check if matrix A is positive definite
+    eigenvals = eigvals(A)
+    if any(eigenvals .< 0)
+        println("Matrix A is not positive definite")
+        return  # Exit the function
+    end
+
+    # Solve Ax = -b for the minimum energy condition
+    min_u = A \ (-b)  # Solve Ax = -b
+    E = 0.5 * dot(min_u, A * min_u) + dot(b, min_u) + c  # Energy formula
+
+    println("Minimum point (x): $min_u")
+    println("Minimum energy (E): $E")
+end
+                                                                            
+# Call the function
+min_energy(A, b, c)
