@@ -1,67 +1,193 @@
-using DifferentialEquations, SpecialFunctions, LinearAlgebra, Plots, QuadGK,SphericalFunctions
+using DifferentialEquations, SpecialFunctions, LinearAlgebra, Plots, QuadGK, SphericalFunctions
 
-lmax = 10; 
-l_num = (lmax +1)^2
+# Setting up the problem: Wave equation on a sphere
 
-# Define a small range of θ values
-theta = range(0, π, length=100);
-phi = range(0, 2π, length=100);
+# Define the maximum spherical harmonic degree
+lmax = 10
+ltot = (lmax + 1)^2  # Total spherical harmonic modes
 
-# Define an initial condition in terms of spherical harmonics
-function gauss(theta)
-    return exp(-(theta - 0.01)^2/(2*0.2^2))  # A Gaussian decay in l-space
-end
-
+# Compute eigenvalues of the Laplacian operator
+eigenvalues = Float64[]
 for l in 0:lmax
     for m in -l:l
-        if m == 0  # Only consider the m = 0 mode
-          # Define spherical harmonic function Y_lm for m = 0, varying l
-            Ylm = theta -> real(sYlm_values(theta, 0.0, l, m)[1])  # Real part of Y_lm
-
-            # Define the integrand function
-            integrand(theta) = gauss(theta) * Ylm(theta) * sin(theta)
-
-            # Compute the coefficient c_l using numerical integration (quadgk)
-            c_l, _ = quadgk(integrand, 0, π)
-            # Append the computed coefficient to the list
-            push!(c_i, c_l)
-        else
-            push!(c_i,0)
-        end
+        push!(eigenvalues, -l * (l + 1))
     end
 end
 
-# function for the A matrix
-function A_!(dA, A, p, t)
-    L_ = p[1]  # Laplacian eigenvalues 
-    
-    # Time derivatives
-    n = length(A) ÷ 2 
-    clm = A[1:n]       
-    dt_c = A[n+1:end] 
+# A_matrix function
+function A_matrix!(dA, A, params, t)
+    # Extract Laplacian eigenvalues
+    eigenvalues = params[1]
+    # Determine number of coefficients
+    half_n = length(A) ÷ 2
+    coeffs = A[1:half_n]
+    velocities = A[half_n+1:end]
 
-    @. dA[1:n] = dt_c 
-    @. dA[n+1:end] = L_ * clm  
+    # Compute derivatives
+    @. dA[1:half_n] = velocities
+    @. dA[half_n+1:end] = eigenvalues * coeffs
 end
 
-# Arrays for the 
-c_i = zeros(Float64, l_num)
-dtc_i = zeros(Float64, l_num)
+# Initialize arrays for coefficients and their time derivatives
+coeff_arr = zeros(Float64, ltot)
+velocity_arr = zeros(Float64, ltot)
 
-# Example 
-c_i[2] = 1.0 
-u_i = vcat(c_i, dtc_i) 
+# Setting initial condition: Exciting (l=1, m=0) mode
+coeff_arr[2] = 1.0  # Nonzero initial value for (l=1, m=0)
+init_state = vcat(coeff_arr, velocity_arr)  # Merge arrays
 
-# Define time span for ODE solver
-tspan = (0.0, 20.0)  
+# Define the simulation time range
+time_range = (0.0, 20.0)
 
-# Define the ODE problem, passing Lp_eigen as a parameter
-prob = ODEProblem(A_!, u_i, tspan, [Lp_eigen])
+# Set up and solve the ODE system
+problem = ODEProblem(A_matrix!, init_state, time_range, [eigenvalues])
+solution = solve(problem, Tsit5(), reltol=1e-6, abstol=1e-6)
 
-# 4th order Runge Kutta solver
-sol = solve(prob, Tsit5(), reltol=1e-6, abstol=1e-6)
+# Plot the results for (l=1, m=0) mode
+plot(solution.t, solution[2, :], xlabel="T", ylabel="A", title="l=1, m=0")
 
-# Plotting: Mode (l=1, m=0)
-plot(sol.t, sol[2, :], xlabel="Time", ylabel="Amplitude", title="Mode (l=1, m=0)")
+# Gaussian function: Computes the peak value of a Gaussian curve
+std_dev = 0.2  
+function gaussian_peak(angle)
+    return exp(-((angle - 0.001)^2) / (2 * std_dev^2))
+end
+
+# Computing mode coefficients via numerical integration
+function compute_coefficients(lmax)
+    coeff_values = Float64[]  # Array to store calculated coefficients
+    
+    for l in 0:lmax
+        for m in -l:l
+            if m == 0  # Focusing only on m = 0
+                Y_lm_func = θ -> real(sYlm_values(θ, 0.0, l, m)[1])  # Extract real part
+                
+                # Define the function to be integrated
+                integral_func(θ) = gaussian_peak(θ) * Y_lm_func(θ) * sin(θ)
+                
+                # Perform numerical integration
+                coeff, _ = quadgk(integral_func, 0, π)
+                push!(coeff_values, coeff)
+            else
+                push!(coeff_values, 0)
+            end
+        end
+    end
+    
+    return coeff_values  # Return computed coefficients
+end
+
+# Example setup: Solving wave equation
+max_degree = 10
+num_spherical_modes = (max_degree + 1)^2  # Compute total spherical harmonic modes
+
+# Obtain initial coefficient values
+initial_coeffs = compute_coefficients(max_degree)
+
+# Initialize time derivatives (zero except for a specific mode)
+deriv_coeffs = zeros(Float64, num_spherical_modes)
+deriv_coeffs[4] = 0.1  # Introduce excitation in (l=1, m=0)
+
+# Merge coefficients and derivatives into a single vector
+initial_state = vcat(initial_coeffs, deriv_coeffs)
+
+# Define time range for solving the system
+simulation_time = (0.0, 10.0)
+
+# Construct and solve the differential equation model
+wave_problem = ODEProblem(A_matrix!, initial_state, simulation_time, [eigenvalues])
+wavesolution = solve(wave_problem, Tsit5(), reltol=1e-6, abstol=1e-6)
+
+# Visualization: Plot evolution of the (l=1, m=0) mode
+plot(wavesolution.t, wavesolution[4, :], xlabel="T", ylabel="A", 
+     title="Gaussian initial condition peaking at the North Pole")
 
 
+
+
+
+# Initialize theta, phi angles
+theta_ = range(0, π, length=100)
+phi_ = range(0, 2π, length=100)
+
+# Create the meshgrid
+theta = repeat(theta_, 1, length(phi_))  # Repeat theta along columns
+phi = repeat(phi_', length(theta_), 1)   # Repeat phi along rows
+
+# Compute Cartesian coordinates using broadcasting
+x = sin.(theta) .* cos.(phi)
+y = sin.(theta) .* sin.(phi)
+z = cos.(theta)
+
+# Convert into 1D arrays for scatter plotting
+x_flat = vec(x)
+y_flat = vec(y)
+z_flat = vec(z)
+
+# Plot the spherical mesh
+scatter3d(x_flat, y_flat, z_flat, marker = (:auto, 3), 
+          xlabel = "x", ylabel = "y", zlabel = "z", 
+          title = "Spherical Grid")
+
+
+
+
+
+# Reconstruct the scalar field from solution coefficients
+function r_psi(solution, time_idx, lmax, theta_grid, phi_grid)
+    psi_field = zeros(size(theta_grid))  # Initialize the field
+    
+    coeff_idx = 1  # Index for accessing solution coefficients
+    
+    for l in 0:lmax
+        for m in -l:l
+            # Compute real spherical harmonics over the grid
+            Ylm_grid = [real(sYlm_values(theta_grid[row, col], phi_grid[row, col], l, m)[1]) 
+                        for row in 1:size(theta_grid, 1), col in 1:size(theta_grid, 2)]
+            
+            # Retrieve the coefficient from the solution array
+            coeff_lm = solution[coeff_idx, time_idx]
+            
+            # Accumulate contributions from different modes
+            @. psi_field += coeff_lm * Ylm_grid  
+            
+            coeff_idx += 1  # Move to the next coefficient
+        end
+    end
+    
+    return psi_field
+end
+
+animation = @animate for time_idx in 1:30:length(solution.t)
+    psi_field = r_psi(solution, time_idx, 2, theta, phi)
+    
+    heatmap(phi_, theta_, psi_field, 
+            title="Wave Evolution at t = $(round(solution.t[time_idx], digits=2))",
+            ylabel="ϕ", xlabel="θ", clims=(-0.1, 0.1))
+end
+    
+# Export the animation as a GIF
+gif(animation, "lmax2.gif", fps=5)
+
+
+animation = @animate for time_idx in 1:30:length(solution.t)
+    psi_field = r_psi(solution, time_idx, 5, theta, phi)
+    
+    heatmap(phi_, theta_, psi_field,
+            title="Wave Evolution at t = $(round(solution.t[time_idx], digits=2))",
+            ylabel="ϕ", xlabel="θ", clims=(-0.1, 0.1))
+end
+
+# Export the animation as a GIF
+gif(animation, "lmax5.gif", fps=5)
+
+
+animation = @animate for time_idx in 1:30:length(solution.t)
+    psi_field = r_psi(solution, time_idx, 10, theta, phi)
+    
+    heatmap(phi_, theta_, psi_field,  
+            title="Wave Evolution at t = $(round(solution.t[time_idx], digits=2))",
+            ylabel="ϕ", xlabel="θ", clims=(-0.1, 0.1))
+end
+
+# Export the animation as a GIF
+gif(animation, "lmax10.gif", fps=5)
